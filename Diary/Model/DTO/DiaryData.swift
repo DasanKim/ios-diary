@@ -18,8 +18,10 @@ struct DiaryData: Decodable {
         case createdDate = "created_at"
     }
     
+    // Diary가 associatedtype가 되면!!
     func toDomain() -> Diary {
         return Diary(
+            identifier: UUID(),
             title: self.title,
             body: self.body,
             createdDate: DateFormatter().dateString(

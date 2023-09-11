@@ -6,8 +6,10 @@
 //
 
 import UIKit
+import CoreData
 
 final class DiaryDetailViewController: UIViewController {
+    var delegate: CoreDataReceivable?
     private var diary: Diary?
     private let diaryTextView: UITextView = {
         let textView = UITextView()
@@ -17,7 +19,7 @@ final class DiaryDetailViewController: UIViewController {
         return textView
     }()
     
-    init(diary: Diary) {
+    init(diary: Diary?) {
         self.diary = diary
         
         super.init(nibName: nil, bundle: nil)
@@ -33,18 +35,47 @@ final class DiaryDetailViewController: UIViewController {
         configureUI()
         setupConstraint()
         setupComponents()
+        diaryTextView.delegate = self
     }
     
     override func viewWillAppear(_ animated: Bool) {
+        addBackgroundObserver()
         if #unavailable(iOS 15.0) {
             addKeyboardObserver()
         }
     }
     
     override func viewWillDisappear(_ animated: Bool) {
+        removeBackgroundObserver()
         if #unavailable(iOS 15.0) {
             removeKeyboardObserver()
         }
+    }
+}
+
+// private 때는 대신에 protocol 쓰는거임!!(명분!!) CoreDataSavable
+extension DiaryDetailViewController: UITextViewDelegate {
+    func textViewDidEndEditing(_ textView: UITextView) {
+        guard textView.text.isEmpty == false else {
+            // 새로운 메모
+            return
+        }
+        
+        let lines = textView.text.components(separatedBy: "\n")
+        guard var diary,
+              let firstLine = lines.first else { return }
+        
+        diary.title = firstLine
+        let bodyLines = lines.dropFirst()
+        let body = bodyLines.joined(separator: "\n")
+        diary.body = body
+        
+        if ContainerManager.shared.isExist(diary) {
+            ContainerManager.shared.update(diary)
+        } else {
+            ContainerManager.shared.insert(diary)
+        }
+        // delegate?.updateCollectionView()
     }
 }
 
@@ -65,7 +96,12 @@ extension DiaryDetailViewController {
             return
         }
         
-        diaryTextView.text = String(format: NameSpace.diaryText, arguments: [diary.title, diary.body])
+        if diary.title.isEmpty && diary.body.isEmpty {
+            diaryTextView.text = nil
+        } else {
+            diaryTextView.text = String(format: NameSpace.diaryText,
+                                        arguments: [diary.title, diary.body])
+        }
         diaryTextView.keyboardDismissMode = .onDrag
     }
     
@@ -127,9 +163,22 @@ extension DiaryDetailViewController {
         )
     }
     
+    private func addBackgroundObserver() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(saveCoreData),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+    }
+    
     private func removeKeyboardObserver() {
         NotificationCenter.default.removeObserver(self, name: UIResponder.keyboardWillShowNotification, object: nil)
         NotificationCenter.default.removeObserver(self, name: UIResponder.keyboardWillHideNotification, object: nil)
+    }
+    
+    private func removeBackgroundObserver() {
+        NotificationCenter.default.removeObserver(self, name: UIApplication.didEnterBackgroundNotification, object: nil)
     }
     
     @objc private func keyboardWillShow(_ notification: Notification) {
@@ -138,22 +187,36 @@ extension DiaryDetailViewController {
             return
         }
 
-        diaryTextView.contentInset = UIEdgeInsets(
-            top: .zero,
-            left: .zero,
-            bottom: keyboardFrame.size.height,
-            right: .zero
-        )
+        diaryTextView.contentInset.bottom = keyboardFrame.size.height
     }
     
     @objc private func keyboardWillHide() {
+        // 여기서 데이터 저장 처리해줘도됨!
         diaryTextView.contentInset = UIEdgeInsets.zero
+    }
+    
+    @objc private func saveCoreData() {
+        print("실행중")
+        let lines = diaryTextView.text.components(separatedBy: "\n")
+        guard var diary,
+              let firstLine = lines.first else { return }
+        
+        diary.title = firstLine
+        let bodyLines = lines.dropFirst()
+        let body = bodyLines.joined(separator: "\n")
+        diary.body = body
+        
+        if ContainerManager.shared.isExist(diary) {
+            ContainerManager.shared.update(diary)
+        } else {
+            ContainerManager.shared.insert(diary)
+        }
     }
 }
 
 // MARK: Name Space
 extension DiaryDetailViewController {
     private enum NameSpace {
-        static let diaryText = "%@ \n\n %@"
+        static let diaryText = "%@\n%@"
     }
 }

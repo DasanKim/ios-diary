@@ -72,10 +72,10 @@ final class DiaryCollectionViewListCell: UICollectionViewListCell {
 
 // MARK: Setup Data
 extension DiaryCollectionViewListCell {
-    func setupLabels(_ diary: Diary) {
+    func setupLabels(_ diary: DiaryEntity) {
         titleLabel.text = diary.title
         createdDateLabel.text = diary.createdDate
-        previewLabel.text = diary.body
+        previewLabel.text = diary.content
     }
 }
 

@@ -5,6 +5,8 @@
 //  Created by Dasan, kyungmin on 2023/08/28.
 //
 
+import Foundation
+
 protocol DiaryManagerDelegate {
     func showErrorAlert(error: Error)
 }
@@ -28,6 +30,7 @@ struct DiaryManager {
     func newDiary() -> Diary {
         let dateManager = DateManager()
         let diary = Diary(
+            identifier: UUID(),
             title: NameSpace.empty,
             body: NameSpace.empty,
             createdDate: dateManager.todayString()

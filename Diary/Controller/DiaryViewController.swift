@@ -6,10 +6,16 @@
 //
 
 import UIKit
+import CoreData
+
+protocol CoreDataReceivable {
+    func updateCollectionView()
+}
 
 final class DiaryViewController: UIViewController {
     private lazy var collectionView: UICollectionView = {
-        let configuration = UICollectionLayoutListConfiguration(appearance: .plain)
+        var configuration = UICollectionLayoutListConfiguration(appearance: .plain)
+        configuration.trailingSwipeActionsConfigurationProvider = makeSwipeActions
         let listLayout = UICollectionViewCompositionalLayout.list(using: configuration)
         let collectionView = UICollectionView(frame: .zero, collectionViewLayout: listLayout)
         
@@ -18,7 +24,8 @@ final class DiaryViewController: UIViewController {
         
         return collectionView
     }()
-    private var diaryDataSource: UICollectionViewDiffableDataSource<Section, Diary>?
+    private var diaryDataSource: UICollectionViewDiffableDataSource<Section, DiaryEntity>?
+    private var fetchedResultsController: NSFetchedResultsController<DiaryEntity>?
     private var diaryManager: DiaryManager?
     
     init(diaryManager: DiaryManager) {
@@ -33,12 +40,53 @@ final class DiaryViewController: UIViewController {
     
     override func viewDidLoad() {
         super.viewDidLoad()
+        // ContainerManager.shared.deleteAll()
         
+        initFetchedResultsController()
         setupObject()
         configureUI()
         setupConstraint()
         configureDataSource()
         loadData()
+    }
+    
+    // 지금 하는 일 별로 없음
+    func initFetchedResultsController() {
+        let fetchRequest = DiaryEntity.fetchRequest()
+        fetchRequest.sortDescriptors = [NSSortDescriptor(key: "number", ascending: true)]
+        
+        fetchedResultsController = NSFetchedResultsController(
+            fetchRequest: fetchRequest,
+            managedObjectContext: ContainerManager.shared.context,
+            sectionNameKeyPath: nil,
+            cacheName: nil
+        )
+        
+        fetchedResultsController?.delegate = self
+        
+        do {
+            try fetchedResultsController?.performFetch()
+        } catch {
+            print(error.localizedDescription)
+        }
+    }
+}
+
+extension DiaryViewController: NSFetchedResultsControllerDelegate {
+    func controller(_ controller: NSFetchedResultsController<NSFetchRequestResult>, didChangeContentWith snapshot: NSDiffableDataSourceSnapshotReference) {
+        
+        // 의존성 문제
+//        diaryDataSource?.apply(snapshot as NSDiffableDataSourceSnapshot<DiaryViewController.Section, DiaryEntity>, animatingDifferences: true)
+        
+        loadData()
+        collectionView.reloadData()
+    }
+}
+
+extension DiaryViewController: CoreDataReceivable {
+    func updateCollectionView() {
+        loadData()
+        collectionView.reloadData()
     }
 }
 
@@ -100,7 +148,7 @@ extension DiaryViewController {
 // MARK: Load Data
 extension DiaryViewController {
     private func loadData() {
-        diaryManager?.fetchDiaryList()
+        // diaryManager?.fetchDiaryList()
         applySnapshot()
     }
 }
@@ -108,11 +156,14 @@ extension DiaryViewController {
 // MARK: CollectionView Delegate
 extension DiaryViewController: UICollectionViewDelegate {
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        guard let diary = diaryManager?.diaryList[indexPath.item] else {
+        // guard let diary = diaryManager?.diaryList[indexPath.item] else { return }
+        guard let diaryList = ContainerManager.shared.getDiary() else {
+            // 작성된 일기가 없습니다.
             return
         }
-        
-        let diaryDetailViewController = DiaryDetailViewController(diary: diary)
+
+        let diaryDetailViewController = DiaryDetailViewController(diary: diaryList[indexPath.item])
+        diaryDetailViewController.delegate = self
         
         show(diaryDetailViewController, sender: self)
         collectionView.deselectItem(at: indexPath, animated: true)
@@ -122,24 +173,27 @@ extension DiaryViewController: UICollectionViewDelegate {
 // MARK: CollectionView DataSource
 extension DiaryViewController {
     private func configureDataSource() {
-        let registration = UICollectionView.CellRegistration<DiaryCollectionViewListCell, Diary> { cell, _, diary in
+        let registration = UICollectionView.CellRegistration<DiaryCollectionViewListCell, DiaryEntity> { cell, _, diary in
             cell.setupLabels(diary)
         }
 
-        diaryDataSource = UICollectionViewDiffableDataSource<Section, Diary>(collectionView: collectionView) { collectionView, indexPath, diary in
+        diaryDataSource = UICollectionViewDiffableDataSource<Section, DiaryEntity>(collectionView: collectionView) { collectionView, indexPath, diary in
             return collectionView.dequeueConfiguredReusableCell(using: registration, for: indexPath, item: diary)
         }
     }
     
     private func applySnapshot() {
-        guard let diaryList = diaryManager?.diaryList, let diaryDataSource else {
-            return
-        }
+        // load
+        // 뷰컨이 list를 들고 있는 것이 좋음. didset -> applySnapshot()
+//        guard let diaryDataSource,
+//              let fetchedObjects = ContainerManager.shared.fetchDiaryEntity() else { return }
+        guard let diaryDataSource,
+              let fetchedObjects = fetchedResultsController?.fetchedObjects else { return }
         
-        var snapshot = NSDiffableDataSourceSnapshot<Section, Diary>()
+        var snapshot = NSDiffableDataSourceSnapshot<Section, DiaryEntity>()
         
         snapshot.appendSections([.main])
-        snapshot.appendItems(diaryList)
+        snapshot.appendItems(fetchedObjects)
         diaryDataSource.apply(snapshot, animatingDifferences: true)
     }
 }
@@ -147,9 +201,59 @@ extension DiaryViewController {
 // MARK: CollectionView Layout
 extension DiaryViewController {
     private func listLayout() -> UICollectionViewLayout {
-        let configuration = UICollectionLayoutListConfiguration(appearance: .plain)
+        var configuration = UICollectionLayoutListConfiguration(appearance: .plain)
+        configuration.trailingSwipeActionsConfigurationProvider = makeSwipeActions
         
         return UICollectionViewCompositionalLayout.list(using: configuration)
+    }
+    
+    private func makeSwipeActions(for indexPath: IndexPath?) -> UISwipeActionsConfiguration? {
+        guard let indexPath = indexPath,
+              let diary = fetchedResultsController?.object(at: indexPath),
+              let id = diary.id
+        else { return nil }
+        
+        let shareAction = UIContextualAction(style: .normal, title: nil) { _, _, completion in
+            // 공유
+            self.setupActivityView(for: indexPath)
+            completion(false)
+        }
+        
+        let deleteAction = UIContextualAction(style: .destructive, title: nil) { _, _, completion in
+            ContainerManager.shared.delete(id: id)
+            // self?.collectionView.reloadData()
+            completion(false)
+        }
+        
+        shareAction.image = UIImage(systemName: "square.and.arrow.up")
+        shareAction.backgroundColor = .darkGray
+        deleteAction.image = UIImage(systemName: "trash.fill")
+        
+        return UISwipeActionsConfiguration(actions: [deleteAction, shareAction])
+    }
+    
+    func setupActivityView(for indexPath: IndexPath?) {
+        guard let indexPath = indexPath,
+              let diary = fetchedResultsController?.object(at: indexPath)
+        else { return }
+        
+        let text = (diary.createdDate ?? "") + "\n" + (diary.title ?? "") + (diary.content ?? "")
+        
+        let activityViewController = UIActivityViewController(activityItems: [text], applicationActivities: nil)
+        
+        // 2. 기본으로 제공되는 서비스 중 사용하지 않을 UIActivityType 제거(선택 사항)
+//        activityViewController.excludedActivityTypes = [UIActivityType.addToReadingList, UIActivityType.assignToContact]
+        
+        // 3. 컨트롤러를 닫은 후 실행할 완료 핸들러 지정
+        activityViewController.completionWithItemsHandler = { (activity, success, items, error) in
+            if success {
+                // 성공했을 때 작업
+            }  else  {
+                // 실패했을 때 작업
+            }
+        }
+        // 4. 컨트롤러 나타내기(iPad에서는 팝 오버로, iPhone과 iPod에서는 모달로 나타냅니다.)
+        self.present(activityViewController, animated: true, completion: nil)
     }
 }
 
@@ -183,6 +287,7 @@ extension DiaryViewController {
         }
         
         let diaryDetailViewController = DiaryDetailViewController(diary: diary)
+        diaryDetailViewController.delegate = self
         
         show(diaryDetailViewController, sender: self)
     }
