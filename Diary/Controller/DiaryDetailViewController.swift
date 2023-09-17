@@ -36,12 +36,16 @@ final class DiaryDetailViewController: UIViewController {
     }
     
     override func viewWillAppear(_ animated: Bool) {
+        addBackgroundObserver()
+        
         if #unavailable(iOS 15.0) {
             addKeyboardObserver()
         }
     }
     
     override func viewWillDisappear(_ animated: Bool) {
+        removeBackgroundObserver()
+        
         if #unavailable(iOS 15.0) {
             removeKeyboardObserver()
         }
