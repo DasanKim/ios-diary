@@ -1,4 +1,4 @@
-# 일기장 
+# 일기장📗
 
 - 프로젝트 기간: [2023년 8월 28일 ~ 9월 15일](https://github.com/YaRkyungmin/ios-diary/wiki/타임라인-📋)
 - 프로젝트 팀원: [kyungmin🐼](https://github.com/YaRkyungmin), [Dasan🌳](https://github.com/DasanKim)
